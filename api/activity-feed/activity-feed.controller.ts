@@ -61,3 +61,53 @@ export async function getActivityFeedUnreadCount(req: Request, res: Response): P
     })
   }
 }
+
+export async function markActivityFeedItemRead(req: Request, res: Response): Promise<void> {
+  try {
+    const loggedinUser = req.loggedinUser
+    if (!loggedinUser || !loggedinUser._id) {
+      logger.warn('Mark activity feed item as read rejected: not authenticated')
+      res.status(401).send({ err: 'Not authenticated' })
+      return
+    }
+
+    const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+    await activityFeedService.markAsRead(loggedinUser._id, idParam)
+    const unreadCount = await activityFeedService.getUnreadCount(loggedinUser._id)
+
+    res.status(200).send({
+      ok: true,
+      unreadCount
+    })
+  } catch (err: any) {
+    logger.error('Failed to mark activity feed item as read', err)
+    res.status(400).send({
+      err: err?.message || 'Failed to mark activity feed item as read'
+    })
+  }
+}
+
+export async function markAllActivityFeedRead(req: Request, res: Response): Promise<void> {
+  try {
+    const loggedinUser = req.loggedinUser
+    if (!loggedinUser || !loggedinUser._id) {
+      logger.warn('Mark all activity feed items as read rejected: not authenticated')
+      res.status(401).send({ err: 'Not authenticated' })
+      return
+    }
+
+    const updatedCount = await activityFeedService.markAllAsRead(loggedinUser._id)
+    const unreadCount = await activityFeedService.getUnreadCount(loggedinUser._id)
+
+    res.status(200).send({
+      ok: true,
+      updatedCount,
+      unreadCount
+    })
+  } catch (err: any) {
+    logger.error('Failed to mark all activity feed items as read', err)
+    res.status(400).send({
+      err: err?.message || 'Failed to mark all activity feed items as read'
+    })
+  }
+}

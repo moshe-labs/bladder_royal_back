@@ -22,6 +22,8 @@ export const activityFeedService = {
   ensureCollectionAndIndexes,
   getFeedPage,
   getUnreadCount,
+  markAsRead,
+  markAllAsRead,
   createForUser,
   createForUsers
 }
@@ -127,6 +129,70 @@ async function getUnreadCount(recipientUserId: string): Promise<number> {
     })
   } catch (err) {
     logger.error('Failed to get activity feed unread count', err)
+    throw err
+  }
+}
+
+async function markAsRead(
+  recipientUserId: string,
+  itemId: string
+): Promise<void> {
+  try {
+    const normalizedRecipientUserId = normalizeRecipientUserId(recipientUserId)
+    const normalizedItemId = normalizeFeedItemId(itemId)
+    const collection = await getCollection()
+    const objectId = new ObjectId(normalizedItemId)
+
+    const result = await collection.updateOne(
+      {
+        _id: objectId,
+        recipientUserId: normalizedRecipientUserId,
+        isRead: false
+      },
+      {
+        $set: {
+          isRead: true,
+          readAt: new Date()
+        }
+      }
+    )
+
+    if (result.matchedCount > 0) return
+
+    const existing = await collection.findOne({
+      _id: objectId,
+      recipientUserId: normalizedRecipientUserId
+    })
+    if (existing) return
+
+    throw new Error('Activity feed item not found')
+  } catch (err) {
+    logger.error('Failed to mark activity feed item as read', err)
+    throw err
+  }
+}
+
+async function markAllAsRead(recipientUserId: string): Promise<number> {
+  try {
+    const normalizedRecipientUserId = normalizeRecipientUserId(recipientUserId)
+    const collection = await getCollection()
+
+    const result = await collection.updateMany(
+      {
+        recipientUserId: normalizedRecipientUserId,
+        isRead: false
+      },
+      {
+        $set: {
+          isRead: true,
+          readAt: new Date()
+        }
+      }
+    )
+
+    return result.modifiedCount || 0
+  } catch (err) {
+    logger.error('Failed to mark all activity feed items as read', err)
     throw err
   }
 }
@@ -237,6 +303,17 @@ function normalizeRecipientUserId(recipientUserId: string): string {
   const normalized = recipientUserId?.trim()
   if (!normalized) {
     throw new Error('recipientUserId is required')
+  }
+  return normalized
+}
+
+function normalizeFeedItemId(itemId: string): string {
+  const normalized = itemId?.trim()
+  if (!normalized) {
+    throw new Error('itemId is required')
+  }
+  if (!ObjectId.isValid(normalized)) {
+    throw new Error('Invalid activity feed item id')
   }
   return normalized
 }
