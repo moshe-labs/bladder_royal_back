@@ -1,4 +1,5 @@
 import { ActivityFeedEventType, ActivityFeedTargetType } from '../types/activity-feed.types.js'
+import { normalizeOptionalString } from '../utils/utils.js'
 
 export interface BuildActivityFcmDataInput {
   type: ActivityFeedEventType
@@ -30,10 +31,4 @@ export function buildActivityFcmData(
   }
 
   return data
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim()
-  return normalized.length > 0 ? normalized : undefined
 }

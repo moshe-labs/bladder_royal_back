@@ -11,6 +11,7 @@ import {
   ActivityFeedPage,
   GetActivityFeedPageOptions
 } from '../../types/activity-feed.types.js'
+import { normalizeOptionalString } from '../../utils/utils.js'
 
 const { ObjectId } = mongoDB
 const DEFAULT_FEED_LIMIT = 20
@@ -425,10 +426,4 @@ function renderTitleAndBody(input: {
     default:
       return { title: 'You have new activity', body: null }
   }
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim()
-  return normalized.length > 0 ? normalized : undefined
 }

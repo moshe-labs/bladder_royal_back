@@ -8,6 +8,7 @@ import { sendFcmToUser } from '../../services/fcm.service.js'
 import { activityFeedService } from '../activity-feed/activity-feed.service.js'
 import { ActivityFeedCreateInput, ActivityFeedEventType, ActivityFeedTargetType } from '../../types/activity-feed.types.js'
 import { buildActivityFcmData } from '../../services/activity-fcm-payload.service.js'
+import { normalizeOptionalString } from '../../utils/utils.js'
 
 export const friendRequestService = {
   add,
@@ -432,10 +433,4 @@ function normalizeActorUsername(username?: string, fullName?: string): string {
   if (normalizedFullName) return normalizedFullName
 
   return 'unknown'
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim()
-  return normalized.length > 0 ? normalized : undefined
 }
