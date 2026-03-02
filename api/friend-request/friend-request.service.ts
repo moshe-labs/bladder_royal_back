@@ -5,6 +5,8 @@ const { ObjectId } = mongoDB
 import { FriendRequest, FriendRequestToAdd, FriendRequestToUpdate } from '../../types/friend-request.types.js'
 import { userService } from '../user/user.service.js'
 import { sendFcmToUser } from '../../services/fcm.service.js'
+import { activityFeedService } from '../activity-feed/activity-feed.service.js'
+import { ActivityFeedCreateInput, ActivityFeedEventType } from '../../types/activity-feed.types.js'
 
 export const friendRequestService = {
   add,
@@ -18,6 +20,10 @@ export const friendRequestService = {
   getFriendsList,
   removeFromFriendsList
 }
+
+const FRIEND_REQUEST_RECEIVED_EVENT_TYPE: ActivityFeedEventType = 'friend_request_received'
+const FRIEND_REQUEST_ACCEPTED_EVENT_TYPE: ActivityFeedEventType = 'friend_request_accepted'
+const FRIEND_REQUEST_DECLINED_EVENT_TYPE: ActivityFeedEventType = 'friend_request_declined'
 
 // Helper function to transform friend request from DB to API format
 function transformFriendRequest(request: any): FriendRequest {
@@ -72,18 +78,39 @@ async function add(request: FriendRequestToAdd): Promise<FriendRequest> {
     const collection = await dbService.getCollection('friendRequest')
     const result = await collection.insertOne(requestToAdd as any)
     const createdRequest = transformFriendRequest({ ...requestToAdd, _id: result.insertedId })
+    const requestId = createdRequest._id || createdRequest.id || ''
+    const senderName = getDisplayName(fromUser)
+    const senderActor = toActivityActorSnapshot(fromUser)
+
+    // Write activity row for recipient (don't fail if feed write fails)
+    try {
+      await activityFeedService.createForUser(request.toUserId, {
+        type: FRIEND_REQUEST_RECEIVED_EVENT_TYPE,
+        actor: senderActor,
+        targetId: requestId,
+        targetType: 'friend_request',
+        title: `${senderName} sent you a friend request`,
+        metadata: {
+          requestId,
+          fromUserId: request.fromUserId,
+          toUserId: request.toUserId
+        },
+        dedupeKey: `${FRIEND_REQUEST_RECEIVED_EVENT_TYPE}:${requestId}`
+      })
+    } catch (err) {
+      logger.error('Failed to write activity feed item for friend request', err)
+    }
 
     // Send FCM notification to recipient (don't fail if FCM fails)
     try {
-      const senderName = fromUser.fullName || fromUser.username || 'Unknown'
       await sendFcmToUser({
         userId: request.toUserId,
         title: 'New friend request',
         body: `${senderName} sent you a friend request`,
         data: {
-          type: 'friend-request-received',
+          type: FRIEND_REQUEST_RECEIVED_EVENT_TYPE,
           fromUserId: request.fromUserId,
-          requestId: createdRequest._id || createdRequest.id || ''
+          requestId
         }
       })
       logger.info('FCM notification sent to user', request.toUserId)
@@ -133,35 +160,51 @@ async function update(request: FriendRequestToUpdate): Promise<FriendRequest> {
     if (request.status === 'accepted') {
       await addToFriendsList(existingRequest.fromUserId, existingRequest.toUserId)
 
-      // After successfully accepting the request, notify the sender
+      // After successfully accepting the request, write feed row and notify sender
       try {
         const toUser = await userService.getById(existingRequest.toUserId)
-        const accepterName = toUser?.fullName || toUser?.username || 'Unknown'
+        const accepterName = getDisplayName(toUser)
+        const accepterActor = toActivityActorSnapshot(toUser)
+
+        await activityFeedService.createForUser(existingRequest.fromUserId, {
+          type: FRIEND_REQUEST_ACCEPTED_EVENT_TYPE,
+          actor: accepterActor,
+          targetId: request._id,
+          targetType: 'friend_request',
+          title: `${accepterName} accepted your friend request`,
+          metadata: {
+            requestId: request._id,
+            fromUserId: existingRequest.fromUserId,
+            toUserId: existingRequest.toUserId
+          },
+          dedupeKey: `${FRIEND_REQUEST_ACCEPTED_EVENT_TYPE}:${request._id}`
+        })
+
         await sendFcmToUser({
           userId: existingRequest.fromUserId,
           title: 'Friend Request Accepted',
           body: `${accepterName} accepted your friend request`,
           data: {
-            type: 'friend-request-accepted',
+            type: FRIEND_REQUEST_ACCEPTED_EVENT_TYPE,
             requestId: request._id,
             friendId: existingRequest.toUserId
           }
         })
       } catch (err) {
-        logger.error('Failed to send FCM notification for accepted friend request', err)
+        logger.error('Failed to process accepted friend request notifications', err)
       }
     }
 
     if (request.status === 'declined') {
       try {
         const toUser = await userService.getById(existingRequest.toUserId)
-        const declinerName = toUser?.fullName || toUser?.username || 'Unknown'
+        const declinerName = getDisplayName(toUser)
         await sendFcmToUser({
           userId: existingRequest.fromUserId,
           title: 'Friend Request Declined',
           body: `${declinerName} declined your friend request`,
           data: {
-            type: 'friend-request-declined',
+            type: FRIEND_REQUEST_DECLINED_EVENT_TYPE,
             requestId: request._id,
             friendId: existingRequest.toUserId
           }
@@ -329,4 +372,44 @@ async function removeFromFriendsList(userId1: string, userId2: string): Promise<
     logger.error(`cannot remove from friends list: ${userId1} and ${userId2}`, err)
     throw err
   }
+}
+
+function getDisplayName(user: {
+  fullName?: string
+  username?: string
+} | null | undefined): string {
+  return user?.fullName || user?.username || 'Unknown'
+}
+
+function toActivityActorSnapshot(user: {
+  _id?: string
+  id?: string
+  username?: string
+  fullName?: string
+  imgUrl?: string | null
+  userColor?: string
+} | null | undefined): ActivityFeedCreateInput['actor'] {
+  const actorId = user?._id || user?.id
+  if (!actorId) return null
+
+  const username = normalizeActorUsername(user?.username, user?.fullName)
+  return {
+    _id: actorId,
+    id: actorId,
+    username,
+    fullName: user?.fullName || null,
+    imgUrl: user?.imgUrl || null,
+    userColor: user?.userColor || null,
+    markerCount: null
+  }
+}
+
+function normalizeActorUsername(username?: string, fullName?: string): string {
+  const normalizedUsername = username?.trim()
+  if (normalizedUsername) return normalizedUsername
+
+  const normalizedFullName = fullName?.trim()
+  if (normalizedFullName) return normalizedFullName
+
+  return 'unknown'
 }
