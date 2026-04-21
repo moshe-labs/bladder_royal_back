@@ -41,6 +41,18 @@ services:
     depends_on:
       - mongo
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3030/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     profiles:
       - prod
 

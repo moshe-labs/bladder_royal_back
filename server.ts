@@ -117,6 +117,10 @@ app.use('/api/area-marker', areaMarkerRoutes)
 app.use('/api/activity-feed', activityFeedRoutes)
 setupSocketAPI(server)
 
+app.get('/health', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'bladder-royal-back' })
+})
+
 app.get('/**', (_req, res) => {
   res.sendFile(path.resolve('public/index.html'))
 })

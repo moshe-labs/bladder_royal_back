@@ -8,3 +8,4 @@ dist/
 firebase-service-account.json
 **/firebase-service-account.json
 **/vars.yml
+/docks
