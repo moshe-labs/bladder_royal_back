@@ -57,8 +57,8 @@ services:
       - prod
 
   mongo:
-    image: mongo:7.0
-    # Previous image: nertworkweb/mongodb-no-avx
+    image: mongo:8.0
+    # Previous image: mongo:7.0
     container_name: bladder_royal_mongo
     ports:
       - "27017:27017"
